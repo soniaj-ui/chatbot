@@ -162,13 +162,26 @@
   }
 
   function render(speak) {
-    el("session-label").textContent = "Session " + current.id + " · " + current.language + " · " + current.state;
+    const modelStatus = {
+      disabled: "Local guidance (model disabled)",
+      responded: "Model responded",
+      unavailable: "Local guidance (model unavailable" +
+        (current.model_http_status ? ", HTTP " + current.model_http_status : "") + ")"
+    }[current.model_status];
+    el("session-label").textContent = ["Session " + current.id, current.language, current.state, modelStatus]
+      .filter(Boolean).join(" · ");
     el("messages").replaceChildren();
     for (const message of current.messages) {
       const bubble = document.createElement("p");
       bubble.className = "bubble " + message.role;
       bubble.lang = current.language;
       bubble.textContent = message.text;
+      if (message.source === "model") {
+        const source = document.createElement("small");
+        source.className = "muted";
+        source.textContent = " · Model-generated question";
+        bubble.append(source);
+      }
       el("messages").append(bubble);
     }
     el("messages").scrollTop = el("messages").scrollHeight;

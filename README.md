@@ -37,11 +37,11 @@ $env:HF_TOKEN = [System.Net.NetworkCredential]::new('', (Read-Host 'Hugging Face
 python run.py --gemma --port 8001
 ```
 
-Open **http://127.0.0.1:8001** and test with a fictional enquiry. This mode sends student replies and relevant profile context to hosted `google/gemma-4-31B-it`. Hugging Face inference can incur charges. Successful startup verifies configuration only. Send a post-consent reply to exercise inference. Provider failures are logged and the app falls back to local guidance.
+Open **http://127.0.0.1:8001** and test with a fictional enquiry. This mode sends student replies and relevant conversation context to hosted `google/gemma-4-31B-it`. Hugging Face inference can incur charges. After consent, discovery questions drafted by Gemma are labelled **Model-generated question**. Provider failures are logged and the app falls back to local guidance.
 
 ### Other providers
 
-Set `GUIDANCE_LLM_URL` to a trusted chat-completions endpoint that supports JSON object responses, and set `GUIDANCE_LLM_MODEL` and `GUIDANCE_LLM_KEY`. The model extracts explicitly stated profile details and classifies questions. FastAPI decides the next question from the profile and renders course facts from [catalogue.json](catalogue.json). With no model configured, local rules handle the conversation.
+Set `GUIDANCE_LLM_URL` to a trusted chat-completions endpoint that supports JSON object responses, and set `GUIDANCE_LLM_MODEL` and `GUIDANCE_LLM_KEY`. The model extracts explicitly stated profile information, classifies replies and drafts a discovery question using the previous turn. FastAPI checks that the question targets the expected topic and renders course facts from [catalogue.json](catalogue.json). With no model configured, local rules handle the conversation.
 
 All course data are fictional samples. The optional model does not receive the enquiry name or phone field, but it receives the student’s replies and previously collected profile.
 
