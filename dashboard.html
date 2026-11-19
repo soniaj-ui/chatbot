@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Infercon Automation | Course Guidance</title>
+<style>
+  * { box-sizing: border-box }
+  body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #f1f4f1; color: #18342b }
+  header { background: #17382d; color: #fff; padding: 28px max(5vw, 18px) }
+  h1, h2, p { margin: 0 0 12px }
+  h1 { font-size: clamp(26px, 4vw, 38px) }
+  h2 { font-size: 20px }
+  header p { color: #c5e2d5; margin: 0 }
+  main { max-width: 1180px; margin: auto; padding: 24px 18px }
+  .grid { display: grid; gap: 18px; grid-template-columns: 1fr 1.3fr }
+  section { background: white; border: 1px solid #d6e1da; border-radius: 14px; padding: 20px; min-width: 0 }
+  .wide { grid-column: 1 / -1 }
+  label { display: block; margin: 8px 0 }
+  input:not([type=checkbox]), select { display: block; width: 100%; padding: 9px; border: 1px solid #98aaa0; border-radius: 6px; font: inherit }
+  button { font: inherit; cursor: pointer; border: 1px solid #176747; background: #176747; color: #fff; border-radius: 8px; padding: 8px 12px }
+  button.secondary { background: white; color: #176747 }
+  button:disabled { opacity: .55; cursor: wait }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center }
+  .row input { flex: 1; min-width: 160px }
+  .muted { color: #4d6559 }
+  .table-scroll { overflow: auto }
+  table { width: 100%; border-collapse: collapse; text-align: left }
+  th, td { padding: 8px; border-bottom: 1px solid #e3e9e5; vertical-align: top }
+  #messages { height: 330px; overflow: auto; border: 1px solid #e3e9e5; background: #f8faf8; padding: 12px; border-radius: 8px; margin: 12px 0 }
+  .bubble { width: fit-content; max-width: 95%; padding: 9px 12px; border-radius: 9px; background: #e5f1eb; overflow-wrap: anywhere }
+  .student { margin-left: auto; background: #e9edf4 }
+  #status { color: #8b3321; min-height: 24px }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere }
+  [hidden] { display: none !important }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr } }
+</style>
+</head>
+<body>
+<header><p>Infercon Automation</p><h1>Multilingual Course Guidance</h1><p>Local simulation · Sample catalogue · Use fictional enquiries</p></header>
+<main>
+  <p id="status" role="status"></p>
+  <div class="grid">
+    <section>
+      <h2>Enquiries</h2>
+      <form id="enquiry">
+        <label>Student name<input name="name" required maxlength="100"></label>
+        <label>Sample phone number<input name="contact" type="tel" pattern="[+]?[0-9]{7,15}" placeholder="9000000042" required></label>
+        <label>Course interest<input name="interest" maxlength="150" placeholder="PLC, motors, SCADA"></label>
+        <label><input name="opted_in" type="checkbox"> Contact permission granted for this demo</label>
+        <button>Add enquiry</button>
+      </form>
+      <div class="table-scroll"><table><thead><tr><th>Student</th><th>Interest</th><th>Session</th></tr></thead><tbody id="leads"></tbody></table></div>
+    </section>
+    <section>
+      <h2>Guidance simulator</h2>
+      <label>Language for new sessions<select id="language">
+        <option value="en-IN">English</option><option value="ta-IN">தமிழ்</option>
+        <option value="te-IN">తెలుగు</option><option value="hi-IN">हिन्दी</option>
+      </select></label>
+      <p class="muted" id="session-label">Choose an enquiry to start.</p>
+      <div id="messages" aria-label="Conversation" aria-live="polite"></div>
+      <div id="permission" class="row" hidden>
+        <button type="button" data-action="consent">Continue and save notes</button>
+        <button type="button" class="secondary" data-action="decline">Decline</button>
+      </div>
+      <form id="reply" class="row" hidden>
+        <input aria-label="Student reply" id="answer" maxlength="1200" required placeholder="Type or dictate a reply">
+        <button>Send</button>
+        <button class="secondary" type="button" id="mic">Dictate</button>
+      </form>
+      <label><input id="play" type="checkbox"> Read assistant replies aloud</label>
+      <div class="row" id="actions" hidden>
+        <button type="button" data-action="callback" id="callback" hidden>Authorise callback</button>
+        <button type="button" class="secondary" data-action="stop">End session</button>
+        <button type="button" class="secondary" data-action="opt_out">Stop future calls</button>
+      </div>
+    </section>
+    <section class="wide">
+      <h2>Counsellor reports</h2>
+      <div class="table-scroll"><table><thead><tr><th>Enquiry</th><th>Language</th><th>Outcome</th><th>Interest</th><th>Course</th><th>Callback</th><th>Details</th></tr></thead><tbody id="reports"></tbody></table></div>
+      <pre id="detail" hidden></pre>
+    </section>
+  </div>
+</main>
+<script>
+  const el = id => document.getElementById(id);
+  const recognitionType = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let current;
+  let leads = [];
+  let courses = [];
+  let running = false;
+
+  async function api(path, body) {
+    const response = await fetch(path, body === undefined ? {} : {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)
+    });
+    const result = await response.json();
+    if (!response.ok) throw Error(typeof result.detail === "string" ? result.detail : "Check the supplied fields.");
+    return result;
+  }
+
+  async function execute(operation) {
+    if (running) return;
+    running = true;
+    el("status").textContent = "";
+    try { await operation(); }
+    catch (error) { el("status").textContent = error.message; }
+    finally { running = false; }
+  }
+
+  function appendRow(parent, values) {
+    const row = parent.insertRow();
+    for (const value of values) {
+      const cell = row.insertCell();
+      if (value instanceof Node) cell.append(value);
+      else cell.textContent = value ?? "—";
+    }
+  }
+
+  function button(label, fn) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "secondary";
+    item.textContent = label;
+    item.onclick = fn;
+    return item;
+  }
+
+  async function refresh() {
+    const [nextLeads, sessions] = await Promise.all([api("/api/enquiries"), api("/api/sessions")]);
+    leads = nextLeads;
+    el("leads").replaceChildren();
+    for (const lead of leads) {
+      const start = button("Start", () => execute(async () => {
+        current = await api("/api/enquiries/" + lead.id + "/sessions", {language: el("language").value});
+        render(current.messages.at(-1).text);
+        await refresh();
+      }));
+      const action = lead.suppressed ? "Opted out" : lead.opted_in ? start : "Permission needed";
+      appendRow(el("leads"), [lead.name + " · " + lead.contact, lead.interest || "—", action]);
+    }
+    el("reports").replaceChildren();
+    for (const report of sessions) {
+      const lead = leads.find(item => item.id === report.enquiry_id);
+      const course = courses.find(item => item.id === report.course_id);
+      const details = button(report.state === "closed" ? "View" : "Resume", () => {
+        current = report;
+        render(false);
+        el("detail").hidden = false;
+        el("detail").textContent = JSON.stringify({
+          profile: report.profile, catalogue_version: report.catalogue_version,
+          unresolved: report.unresolved, callback: report.callback,
+          next_action: report.callback && !lead?.suppressed ? "Counsellor to review the callback request and verify eligibility." : null
+        }, null, 2);
+      });
+      appendRow(el("reports"), [lead?.name ?? report.enquiry_id, report.language,
+        (report.outcome || report.state).replaceAll("_", " "), report.interest_level,
+        course ? course.title + " (sample)" : null,
+        report.callback ? (lead?.suppressed ? "Blocked by opt-out" : report.callback.preference || "Pending review") : null, details]);
+    }
+  }
+
+  function render(speak) {
+    el("session-label").textContent = "Session " + current.id + " · " + current.language + " · " + current.state;
+    el("messages").replaceChildren();
+    for (const message of current.messages) {
+      const bubble = document.createElement("p");
+      bubble.className = "bubble " + message.role;
+      bubble.lang = current.language;
+      bubble.textContent = message.text;
+      el("messages").append(bubble);
+    }
+    el("messages").scrollTop = el("messages").scrollHeight;
+    el("permission").hidden = current.state !== "consent";
+    el("reply").hidden = !["discovery", "followup"].includes(current.state);
+    el("actions").hidden = current.state === "closed";
+    el("callback").hidden = current.state !== "followup" && !(current.state === "discovery" && current.unresolved.length);
+    if (speak && el("play").checked && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      const voice = new SpeechSynthesisUtterance(speak);
+      voice.lang = current.language;
+      window.speechSynthesis.speak(voice);
+    }
+  }
+
+  function send(action, text = "") {
+    return execute(async () => {
+      const previousCount = current.messages.length;
+      current = await api("/api/sessions/" + current.id + "/turns", {action, text, revision: current.revision});
+      el("answer").value = "";
+      render(current.messages.slice(previousCount).filter(message => message.role === "assistant").map(message => message.text).join(" "));
+      await refresh();
+    });
+  }
+
+  el("enquiry").onsubmit = event => {
+    event.preventDefault();
+    execute(async () => {
+      const form = event.currentTarget || el("enquiry");
+      const fields = Object.fromEntries(new FormData(form));
+      fields.opted_in = fields.opted_in === "on";
+      await api("/api/enquiries", fields);
+      form.reset();
+      await refresh();
+    });
+  };
+  el("reply").onsubmit = event => {
+    event.preventDefault();
+    send("message", el("answer").value);
+  };
+  document.querySelectorAll("[data-action]").forEach(item => {
+    item.onclick = () => {
+      if (item.dataset.action === "callback") {
+        const preference = window.prompt("Optional preferred callback day and time. Confirm to save your request.", "");
+        if (preference !== null) send("callback", preference);
+      } else {
+        send(item.dataset.action);
+      }
+    };
+  });
+  el("mic").hidden = !recognitionType;
+  el("play").disabled = !("speechSynthesis" in window);
+  el("mic").onclick = () => {
+    const speech = new recognitionType();
+    speech.lang = current.language;
+    speech.onresult = event => { el("answer").value = event.results[0][0].transcript; };
+    speech.onerror = () => { el("status").textContent = "Dictation is unavailable. You can type a reply."; };
+    try { speech.start(); }
+    catch { el("status").textContent = "Dictation is unavailable. You can type a reply."; }
+  };
+
+  execute(async () => {
+    courses = (await api("/api/catalogue")).courses;
+    await refresh();
+  });
+</script>
+</body>
+</html>

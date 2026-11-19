@@ -1,0 +1,5 @@
+[
+  {"id":"DEMO-PLC-01","title":"PLC Foundations","level":"beginner","modules":"PLC programming and fault-finding labs","duration_weeks":6,"fee_inr":12000,"tags":["plc","maintenance","troubleshooting","பராமரிப்பு","పిఎల్‌సి","पीएलसी"]},
+  {"id":"DEMO-SCADA-01","title":"SCADA and HMI Workshop","level":"experienced","modules":"HMI screen design and SCADA alarm configuration","duration_weeks":4,"fee_inr":9500,"tags":["scada","hmi","alarms","monitoring"]},
+  {"id":"DEMO-DRIVE-01","title":"Industrial Motors and Drives","level":"beginner","modules":"Motor controls and variable-frequency drive labs","duration_weeks":5,"fee_inr":10500,"tags":["motor","drive","vfd","மோட்டார்","మోటార్","मोटर"]}
+]

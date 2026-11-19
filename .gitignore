@@ -1,0 +1,7 @@
+__pycache__/
+.venv/
+.venv-deps/
+.hf-deps/
+/models/
+*.db
+.env
