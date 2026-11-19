@@ -1,6 +1,6 @@
 # AI Multilingual Course Guidance Caller
 
-This local prototype for Infercon Automation simulates an outbound course guidance call in the browser. It demonstrates the AI disclosure, consent, adaptive discovery, catalogue-backed recommendations, counsellor handoff and contact opt-out described in [the project submission](PROJECT_SUBMISSION.md).
+This local prototype simulates an outbound course guidance call in the browser. It demonstrates the AI disclosure, consent, adaptive discovery, catalogue-backed recommendations, counsellor handoff and contact opt-out described in [the project submission](PROJECT_SUBMISSION.md).
 
 ## Run locally
 
@@ -23,6 +23,17 @@ Open **http://127.0.0.1:8000** for the dashboard or **http://127.0.0.1:8000/docs
 3. Enter an electrical engineering diploma, explain that you have never programmed a PLC, then describe your interest in hands-on PLC programming and factory maintenance.
 4. The assistant recommends PLC Foundations from the fictional catalogue. Enter `fee` to check the approved fee or ask about weekend classes to see a counsellor referral.
 5. Authorise a callback and optionally enter a preferred time. Open **Counsellor reports** to inspect the saved profile, catalogue reference and unanswered question.
+
+### Hands-free voice call in the student's language
+
+Use Google Chrome, because it has the best speech support for Tamil, Telugu and Hindi.
+
+1. Keep **Auto-detect from the student's reply** selected and tick **Hands-free voice call**.
+2. Start a session. The assistant greets in English and offers the four languages, then listens.
+3. Say a language name such as "Tamil", or answer in that language, for example "ஆம்" or "हाँ". The assistant switches and continues by voice in that language.
+4. Speak each answer when **Listening…** is shown. Questions such as "கட்டணம் எவ்வளவு?" are answered from the catalogue in the same language.
+
+The student can switch language at any time by saying, for example, "speak in Hindi".
 
 The dashboard can dictate and read replies aloud when supported by the browser and installed voices. Typed replies work independently of speech features. Use fictional details in the demo, especially when a browser speech service or remote model is enabled.
 
