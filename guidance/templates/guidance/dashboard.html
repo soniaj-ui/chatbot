@@ -379,11 +379,7 @@
   }
 
   function render(speak) {
-    const modelStatus = {
-      disabled: "Rule-based",
-      responded: "AI model",
-      unavailable: "Rule-based (model offline" + (current.model_http_status ? " " + current.model_http_status : "") + ")"
-    }[current.model_status];
+    const modelStatus = {responded: "AI replying", unavailable: "AI unavailable"}[current.model_status];
     el("session-label").replaceChildren(...[LANGUAGES[current.language], STATES[current.state], modelStatus]
       .filter(Boolean).map(text => node("span", "badge", text)));
     setCall("idle", idleText());
@@ -391,7 +387,8 @@
     for (const message of current.messages) {
       const bubble = node("p", "bubble " + message.role, message.text);
       bubble.lang = current.language;
-      if (message.source === "model") bubble.append(node("small", "", "AI-generated question"));
+      // Every conversational reply is AI-generated; mark the few fixed messages instead.
+      if (message.source === "fallback") bubble.append(node("small", "", "AI unavailable · fixed message"));
       el("messages").append(bubble);
     }
     el("messages").scrollTop = el("messages").scrollHeight;

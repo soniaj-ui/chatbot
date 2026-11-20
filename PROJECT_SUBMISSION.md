@@ -12,7 +12,7 @@ A training institute needs a multilingual voice assistant that can conduct the i
 
 ## 2. Solution and workflow
 
-The assistant uses each answer to decide what to ask next. For example, if a diploma graduate says they have only seen a PLC demonstration, the assistant can explore the kind of hands-on work they want to do. If a student already programs PLCs, it can ask which skill they want to develop next. FastAPI controls consent, call state and tool access while the language model interprets responses and drafts questions.
+The assistant uses each answer to decide what to ask next. For example, if a diploma graduate says they have only seen a PLC demonstration, the assistant can explore the kind of hands-on work they want to do. If a student already programs PLCs, it can ask which skill they want to develop next. Django stores consent, call state and reports while the language model generates every spoken reply from the approved catalogue; Django validates its output before saving.
 
 | Step | System action | Result |
 |---|---|---|
@@ -229,13 +229,13 @@ The lookup after turn 10 returns `DEMO-PLC-01` from `demo-v1`. A field-specific 
 
 ```mermaid
 flowchart LR
-    CRM[CRM or enquiry form] --> API[FastAPI backend]
+    CRM[CRM or enquiry form] --> API[Django backend]
     API --> DB[(MySQL)]
     API --> Worker[Dial and reporting worker]
     Worker --> Gate[Consent, suppression and provider checks]
     Gate --> Tel[Telephony API]
     Tel <--> Student[Student phone]
-    Tel <-->|Bidirectional audio and events| Voice[FastAPI call session]
+    Tel <-->|Bidirectional audio and events| Voice[Django call session]
     Voice --> STT[Streaming speech-to-text]
     STT --> Voice
     Voice <--> LLM[LLM API]
@@ -251,7 +251,7 @@ flowchart LR
 
 | Component | Responsibility |
 |---|---|
-| Python and FastAPI | CRM ingestion, provider webhooks and media sessions, state transitions, tool validation and dashboard APIs. |
+| Python and Django | CRM ingestion, provider webhooks and media sessions, state transitions, tool validation and dashboard APIs. |
 | Background worker | Durable dial scheduling, event reconciliation, report finalisation and callback queue updates. Use a transactional MySQL outbox for durable jobs. |
 | Telephony API | Approved outbound route, call control, bidirectional audio and delivery status. |
 | Streaming STT and TTS | Recognise speech in the selected language and stream short replies. Use approved prompts for consent and failure paths. |
