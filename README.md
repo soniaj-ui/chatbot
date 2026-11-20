@@ -39,6 +39,19 @@ The dashboard can dictate and read replies aloud when supported by the browser a
 
 ## Optional model integration
 
+### OpenAI or Gemini key
+
+Create a `.env` file next to `run.py` and add a key. `run.py` reads it on start, so no terminal commands are needed. If both keys are set, OpenAI is used. `.env` is ignored by git; do not share it.
+
+```
+# From https://platform.openai.com/api-keys (API billing is separate from ChatGPT Plus)
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4o-mini
+# Free from https://aistudio.google.com/apikey
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-flash-lite-latest
+```
+
 ### Gemma 4 31B via Hugging Face
 
 Create a [Hugging Face token](https://huggingface.co/settings/tokens) with Inference Providers permission. Enter it in PowerShell without displaying it or saving it in the project:

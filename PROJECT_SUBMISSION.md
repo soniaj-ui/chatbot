@@ -1,14 +1,14 @@
-# AI Multilingual Course Guidance Caller – Infercon Automation
+# AI Multilingual Course Guidance Caller
 
 **Project submission**
 
-**Demonstration data.** All catalogue entries, course titles, fees, durations, modules, student details and call records in this submission are fictional samples. Replace the sample catalogue with an approved Infercon Automation catalogue before production use.
+**Demonstration data.** All catalogue entries, course titles, fees, durations, modules, student details and call records in this submission are fictional samples. Replace the sample catalogue with the institute’s approved catalogue before production use.
 
 ## 1. Problem statement
 
 Students who enquire about automation courses may need help choosing a programme that fits their qualification, hands-on experience and career goals. Staff must often gather these details by phone, sometimes across several languages, before they can recommend a course. Inconsistent notes and delays can leave students waiting for answers and counsellors repeating questions.
 
-Infercon Automation needs a multilingual voice assistant that can conduct the initial conversation, explain courses using approved information and pass a useful summary to a counsellor. The goal is to help students identify a suitable next step and give counsellors enough context to follow up.
+A training institute needs a multilingual voice assistant that can conduct the initial conversation, explain courses using approved information and pass a useful summary to a counsellor. The goal is to help students identify a suitable next step and give counsellors enough context to follow up.
 
 ## 2. Solution and workflow
 
@@ -17,7 +17,7 @@ The assistant uses each answer to decide what to ask next. For example, if a dip
 | Step | System action | Result |
 |---|---|---|
 | 1. Receive enquiry | Import lead ID, name, phone, initial course interest and contact permission evidence from the CRM. | Deduplicated enquiry and pending dial job. |
-| 2. Check and dial | Check suppression, provider eligibility and permissible calling window immediately before dialling. On answer, identify Infercon Automation, disclose AI use and confirm the intended recipient. | Eligible call or recorded skip reason. |
+| 2. Check and dial | Check suppression, provider eligibility and permissible calling window immediately before dialling. On answer, identify the institute, disclose AI use and confirm the intended recipient. | Eligible call or recorded skip reason. |
 | 3. Choose language and obtain consent | Offer Tamil, English, Telugu and Hindi. Accept other languages when supported by both speech services and the approved consent flow. Explain the purpose and saved notes, then ask permission to continue. | Confirmed language and explicit decision. |
 | 4. Discover needs | Ask one question at a time and reuse information already given. Fill gaps relevant to course fit. | Qualification, experience, interests and career goal, with unknown fields left blank. |
 | 5. Consult the catalogue | Search the current approved catalogue using the profile and any specific question. Explain the match using returned facts. | Course suggestion with catalogue references and any open questions. |
@@ -62,7 +62,7 @@ An explicit do-not-call request from any live state triggers suppression and end
 ### Live system prompt
 
 ```text
-You are Infercon Automation’s AI voice assistant for course enquiries.
+You are an AI voice assistant for course enquiries.
 Help the intended recipient identify suitable automation training using the
 approved catalogue. Use short, natural sentences suitable for a phone call.
 
@@ -172,7 +172,7 @@ The table contains 16 spoken turns. The first two show the language selection in
 
 | Turn | Speaker | Spoken dialogue | English translation |
 |---|---|---|---|
-| 1 | AI | Hello, I’m Infercon Automation’s AI assistant. Am I speaking with Kavya? Which language would you prefer? | Hello, I’m Infercon Automation’s AI assistant. Am I speaking with Kavya? Which language would you prefer? |
+| 1 | AI | Hello, I’m an AI course guidance assistant. Am I speaking with Kavya? Which language would you prefer? | Hello, I’m an AI course guidance assistant. Am I speaking with Kavya? Which language would you prefer? |
 | 2 | Student | Yes, this is Kavya. Tamil, please. | Yes, this is Kavya. Tamil, please. |
 | 3 | AI | உங்கள் பயிற்சி விசாரணை தொடர்பாக அழைக்கிறேன். ஆலோசகருக்காக உரையாடலின் முக்கிய விவரங்களைச் சேமிப்போம். தொடரலாமா? | I’m calling about your training enquiry. We’ll save key details from the conversation for a counsellor. May we continue? |
 | 4 | Student | ஆம், தொடரலாம். | Yes, we can continue. |

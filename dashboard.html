@@ -283,6 +283,14 @@
     return item;
   }
 
+  // Report speech events to the server (client.log) so a missed voice turn can be diagnosed.
+  function trace(event, detail = "") {
+    try {
+      fetch("/api/client-log", {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({event, detail: String(detail).slice(0, 500)}), keepalive: true});
+    } catch {}
+  }
+
   function setCall(mode, text) {
     el("call").dataset.mode = mode;
     el("call-status").textContent = text;
@@ -304,6 +312,7 @@
       who.append(node("b", "", lead.name), node("span", "", lead.contact + " · " + (lead.interest || "No interest given")));
       const start = button("Call", () => execute(async () => {
         recognition?.abort();
+        stopSpeaking();
         current = await api("/api/enquiries/" + lead.id + "/sessions", {language: el("language").value});
         el("detail").hidden = true;
         render(current.messages.at(-1).text);
@@ -371,32 +380,54 @@
   }
 
   // Speakers can feed the assistant's voice back into the microphone. Ignore a transcript that
-  // mostly repeats the assistant's last message.
+  // mostly repeats what the assistant just said.
+  let lastSpoken = "";
   function isEcho(transcript) {
-    const words = text => text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean);
+    const words = text => text.toLowerCase().replace(/[^\p{L}\p{M}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean);
     const said = words(transcript);
-    const last = new Set(words(current.messages.filter(message => message.role === "assistant").at(-1)?.text || ""));
-    return said.length >= 3 && said.filter(word => last.has(word)).length / said.length >= 0.5;
+    const spoken = new Set(words(lastSpoken || current.messages.filter(message => message.role === "assistant").at(-1)?.text || ""));
+    return said.length >= 3 && said.filter(word => spoken.has(word)).length / said.length >= 0.5;
   }
 
   let audio;
+  let speechToken = 0;
+
+  function stopSpeaking() {
+    speechToken++;
+    audio?.pause();
+    window.speechSynthesis?.cancel();
+  }
 
   // Prefer the server's neural voice, which covers Tamil and Telugu; fall back to browser voices.
   async function speakText(text, then) {
+    lastSpoken = text;
     if (!(el("play").checked || el("handsfree").checked)) return then();
-    const done = () => { setCall("idle", idleText()); then(); };
-    audio?.pause();
-    window.speechSynthesis?.cancel();
-    setCall("speaking", "Speaking…");
+    stopSpeaking();
+    const token = speechToken;
+    // Browser voices sometimes never report that they finished, so do not wait forever.
+    const timer = setTimeout(() => done(), 8000 + text.length * 150);
+    const done = () => {
+      if (token !== speechToken) return;
+      speechToken++;
+      clearTimeout(timer);
+      setCall("idle", idleText());
+      then();
+    };
+    setCall("speaking", "Speaking… (tap the mic to answer now)");
+    trace("speak", current.language + " " + text.slice(0, 60));
     try {
       const params = new URLSearchParams({text, language: current.language});
       const response = await fetch("/api/speech?" + params);
       if (!response.ok) throw Error("Server voice unavailable");
-      audio = new Audio(URL.createObjectURL(await response.blob()));
+      const clip = await response.blob();
+      if (token !== speechToken) return;
+      audio = new Audio(URL.createObjectURL(clip));
       audio.onended = done;
       audio.onerror = done;
       await audio.play();
-    } catch {
+    } catch (error) {
+      if (token !== speechToken) return;
+      trace("speak-fallback", error.message);
       browserSpeak(text, done);
     }
   }
@@ -420,32 +451,73 @@
     setCall("idle", idleText());
   }
 
+  // Chrome's English recognizer can turn "vanakkam" into "Namaste". Prefer any of its other
+  // guesses that names a greeting or language, so the student gets the language they asked for.
+  // The English recognizer does not know "vanakkam" and writes sound-alikes such as "vanakam",
+  // "wanakkam", "one a come" or "banakkam"; read those as "vanakkam".
+  const VANAKKAM = /^\s*(?:[vwb]h?[ae]n+[ae]k+[ae]?[mn]+|one a come|van a come|one uncom|vanna come|wanna come|wanakum)\s*$/i;
+  const LANGUAGE_HINTS = /\b(vanakk?am|tamil|tamizh|thamizh|telugu|namaskaram|hindi|english)\b/i;
+  function bestGuess(result) {
+    const guesses = Array.from(result, guess => guess.transcript);
+    if (guesses.some(text => VANAKKAM.test(text))) return "vanakkam";
+    return guesses.find(text => LANGUAGE_HINTS.test(text)) || guesses[0];
+  }
+
   function listen() {
     if (!recognitionType || recognition || current?.state === "closed") return;
     const session = current.id;
     let heard = "";
     let aborted = false;
+    let silence;
     recognition = new recognitionType();
     recognition.lang = current.language;
-    recognition.onresult = event => { heard = event.results[0][0].transcript.replace(/<\/?s>/gi, "").trim(); };
+    // Keep listening through short pauses and finish once the student is quiet for a moment,
+    // so a whole sentence is captured instead of the first word.
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 5;
+    const active = recognition;
+    const finish = () => active.stop();
+    const limit = setTimeout(finish, 30000);
+    recognition.onresult = event => {
+      heard = Array.from(event.results, bestGuess).join(" ").replace(/<\/?s>/gi, "").replace(/\s+/g, " ").trim();
+      el("answer").value = heard;
+      setCall("listening", "Hearing: " + heard);
+      clearTimeout(silence);
+      silence = setTimeout(finish, 1800);
+    };
     recognition.onerror = event => {
       aborted = event.error === "aborted";
-      if (!["no-speech", "aborted"].includes(event.error)) el("status").textContent = "Speech input is unavailable. You can type a reply.";
+      trace("mic-error", event.error);
+      const reason = {
+        "not-allowed": "Microphone blocked. Click the lock icon in the address bar, allow Microphone and reload.",
+        "service-not-allowed": "Microphone blocked. Click the lock icon in the address bar, allow Microphone and reload.",
+        "audio-capture": "No microphone found. Check that a microphone is connected and selected in Windows.",
+        "network": "Chrome speech recognition needs the internet and could not reach Google. Check the connection or type the reply."
+      }[event.error];
+      if (reason) el("status").textContent = reason;
+      else if (!["no-speech", "aborted"].includes(event.error)) el("status").textContent = "Speech input error (" + event.error + "). You can type a reply.";
     };
     recognition.onend = () => {
+      clearTimeout(silence);
+      clearTimeout(limit);
+      trace("mic-end", heard || "(nothing)");
+      if (recognition !== active) return;
       stopListening();
       if (aborted || current.id !== session) return;
       if (heard && isEcho(heard)) {
         heard = "";
+        el("answer").value = "";
         el("status").textContent = "Heard the assistant's own voice. Use headphones or lower the speaker volume.";
       }
-      if (heard && el("handsfree").checked) send("message", heard);
-      else if (heard) el("answer").value = heard;
+      if (heard) send("message", heard);
       else if (el("handsfree").checked && retries++ < 2) listen();
       else if (el("handsfree").checked) el("status").textContent = "No reply heard. Press the microphone or type to continue.";
     };
     el("mic").classList.add("active");
-    setCall("listening", "Listening… speak now");
+    el("status").textContent = "";
+    setCall("listening", "Listening… speak now (" + LANGUAGES[current.language] + ")");
+    trace("listen", current.language);
     try { recognition.start(); }
     catch {
       stopListening();
@@ -453,9 +525,24 @@
     }
   }
 
-  function send(action, text = "") {
+  async function send(action, text = "") {
+    if (recognition) {
+      const listening = recognition;
+      stopListening();
+      listening.abort();
+    }
+    // Wait for an earlier request to finish instead of silently dropping this answer.
+    while (running) await new Promise(resolve => setTimeout(resolve, 100));
     return execute(async () => {
       const previousCount = current.messages.length;
+      if (text.trim()) {
+        const bubble = node("p", "bubble student", text.trim());
+        el("messages").append(bubble);
+        el("messages").scrollTop = el("messages").scrollHeight;
+        el("answer").value = "";
+        setCall("speaking", "Thinking…");
+      }
+      trace("send", action + " " + text);
       current = await api("/api/sessions/" + current.id + "/turns", {action, text, revision: current.revision});
       el("answer").value = "";
       render(current.messages.slice(previousCount).filter(message => message.role === "assistant").map(message => message.text).join(" "));
@@ -494,6 +581,7 @@
   if ("speechSynthesis" in window) window.speechSynthesis.getVoices();
   el("mic").onclick = () => {
     if (recognition) return recognition.stop();
+    stopSpeaking();
     retries = 0;
     listen();
   };

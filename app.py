@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as ModelTimeout
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -18,6 +19,9 @@ ROOT = Path(__file__).resolve().parent
 logger = logging.getLogger("uvicorn.error")
 CATALOGUE = json.loads((ROOT / "catalogue.json").read_text(encoding="utf-8"))
 CATALOGUE_VERSION = "demo-v1"
+# The model call gets a hard deadline so a slow connection never stalls the voice call.
+MODEL_DEADLINE = 5
+model_pool = ThreadPoolExecutor(max_workers=4)
 engine = create_engine(os.getenv("DATABASE_URL", f"sqlite:///{ROOT / 'guidance.db'}"))
 
 
@@ -145,7 +149,7 @@ MESSAGES = {
 }
 VOICES = {"en-IN": "en-IN-NeerjaNeural", "ta-IN": "ta-IN-PallaviNeural",
           "te-IN": "te-IN-ShrutiNeural", "hi-IN": "hi-IN-SwaraNeural"}
-LANGUAGE_OFFER =" You can reply in English, Tamil, Telugu or Hindi."
+LANGUAGE_OFFER = " To talk in Tamil, Telugu or Hindi, just say the language name."
 SCRIPTS = (("ta-IN", "஀", "௿"), ("te-IN", "ఀ", "౿"), ("hi-IN", "ऀ", "ॿ"))
 LANGUAGE_NAMES = {
     "en-IN": {"english", "ஆங்கிலம்", "ఇంగ్లీష్", "अंग्रेजी", "अंग्रेज़ी", "इंग्लिश"},
@@ -180,6 +184,9 @@ COURSE_WORDS = {"course", "courses", "program", "programs", "programme", "traini
 WHICH_WORDS = {"what", "which", "list", "available", "enna", "yenna", "entha", "iruku", "irukku", "irukka", "kya",
                "kaun", "kaunse", "konsa", "kaunsa", "emi", "enti", "evi", "unnayi", "என்ன", "எந்த", "என்னென்ன",
                "இருக்கு", "உள்ளன", "ఏమి", "ఏ", "ఏవి", "ఉన్నాయి", "क्या", "कौन", "कौनसे", "कौन से"}
+QUESTION_WORDS = WHICH_WORDS | {"how", "when", "where", "why", "will", "can", "does", "is", "are", "eppo", "eppadi",
+                                "evlo", "kab", "kaise", "kitna", "kitni", "ela", "eppudu", "எப்போது", "எப்படி",
+                                "எவ்வளவு", "कब", "कैसे", "कितना", "कितनी", "ఎప్పుడు", "ఎలా", "ఎంత"}
 THANKS = {"thanks", "thank you", "thankyou", "nandri", "dhanyavaad", "dhanyavad", "dhanyavadalu", "நன்றி",
           "धन्यवाद", "शुक्रिया", "ధన్యవాదాలు"}
 # Single words that signal a spoken yes or no inside a longer consent reply.
@@ -192,6 +199,10 @@ UNSURE = {"i dont know", "i do not know", "dont know", "not sure", "can you guid
           "ennaku idea illa", "enakku idea illa", "idea illa", "ennaku idea ila", "enakku idea ila",
           "idea ila", "enakku theriyala", "ennaku theriyala", "எனக்கு தெரியவில்லை"}
 GREETINGS = {"hi", "hello", "hey", "vanakkam", "வணக்கம்", "నమస్కారం", "नमस्ते"}
+# A greeting on its own also picks the language, at any point in the call.
+GREETING_LANGUAGE = {"vanakkam": "ta-IN", "vanakam": "ta-IN", "vanakum": "ta-IN", "wanakkam": "ta-IN",
+                     "wanakam": "ta-IN", "vannakam": "ta-IN", "vanakkum": "ta-IN", "வணக்கம்": "ta-IN", "namaskaram": "te-IN",
+                     "నమస్కారం": "te-IN", "namaste": "hi-IN", "namaskar": "hi-IN", "नमस्ते": "hi-IN"}
 GUIDED_CHOICES = {
     "en-IN": "Which sounds more interesting to try: writing PLC programs, working with motors and drives, or designing screens to monitor machines?",
     "ta-IN": "எதை முயற்சி செய்ய விரும்புகிறீர்கள்? PLC புரோகிராமிங், மோட்டார் மற்றும் டிரைவ்கள், அல்லது இயந்திரங்களைக் கண்காணிக்கும் திரைகள்?",
@@ -276,7 +287,9 @@ def romanized_language(normalized):
 
 def asks_courses(normalized):
     words = set(normalized.split())
-    return bool(words & COURSE_WORDS and words & WHICH_WORDS)
+    # "What is the course fee?" asks about a fee, not for the list of courses.
+    fee_question = any(term in normalized for term in DIRECT_QUESTIONS)
+    return bool(words & COURSE_WORDS and words & WHICH_WORDS) and not fee_question
 
 
 def course_list(prompt):
@@ -377,6 +390,18 @@ def dashboard():
     return FileResponse(ROOT / "dashboard.html")
 
 
+class ClientLog(BaseModel):
+    event: str = Field(max_length=40)
+    detail: str = Field(default="", max_length=500)
+
+
+@app.post("/api/client-log", status_code=204)
+def client_log(body: ClientLog):
+    """Browser speech events, so failed voice turns can be diagnosed from client.log."""
+    with open(ROOT / "client.log", "a", encoding="utf-8") as log:
+        log.write(f"{now()} {body.event} {body.detail}\n")
+
+
 @app.get("/api/speech")
 async def speech(text: str = Query(min_length=1, max_length=1200),
                  language: Literal["en-IN", "ta-IN", "te-IN", "hi-IN"] = "en-IN"):
@@ -460,7 +485,8 @@ def turn(session_id: int, body: Turn):
                                                  MESSAGES[row.language]["offer_callback"]}
         # Follow the student's language: a named language, the script they reply in, or
         # Romanized greetings and answers while choosing a language at the start.
-        requested = requested_language(normalized) if body.action == "message" else None
+        requested = ((requested_language(normalized) or GREETING_LANGUAGE.get(normalized))
+                     if body.action == "message" else None)
         detected = requested or (body.action == "message" and (script_language(message)
                                  or (state == "consent" and romanized_language(normalized))))
         language = detected or row.language
@@ -503,18 +529,29 @@ def turn(session_id: int, body: Turn):
         elif body.action == "message" and state in {"discovery", "followup"} and message:
             data["messages"].append({"role": "student", "text": message})
             course = next((entry for entry in CATALOGUE if entry["id"] == data["course_id"]), None)
-            model_result = guidance_model(language, data["profile"], data["expected"], message,
-                                          previous_question, lead.interest)
+            pending = model_pool.submit(guidance_model, language, data["profile"], data["expected"],
+                                        message, previous_question, lead.interest)
+            try:
+                model_result = pending.result(timeout=MODEL_DEADLINE)
+            except ModelTimeout:
+                logger.warning("Model took longer than %s s. Using local guidance.", MODEL_DEADLINE)
+                model_result = {"status": "unavailable"}
             data["model_status"] = model_result.get("status", "unavailable")
             data["model_http_status"] = model_result.get("http_status")
             query = message.casefold()
-            asks_question = ("?" in message or model_result.get("question") is True
+            # The model sometimes labels plain answers as questions, so its flag needs a question word.
+            model_question = model_result.get("question") is True and bool(set(normalized.split()) & QUESTION_WORDS)
+            asks_question = ("?" in message or model_question
                              or any(term in query for term in DIRECT_QUESTIONS + UNPUBLISHED))
+            # A plain yes or no answers the experience question even if the model calls it unsure.
+            model_unsure = model_result.get("unsure") is True and normalized not in AFFIRMATIVE | NEGATIVE
+            if state == "discovery" and not model_unsure and model_result.get("unsure") is True:
+                model_result = {**model_result, "next_field": None}
             if callback_offered and normalized in AFFIRMATIVE:
                 state = save_callback(data, prompt)
             elif callback_offered and normalized in NEGATIVE:
                 say(data, current_question(prompt, state, data["expected"], lead.interest, data["profile"]))
-            elif state == "discovery" and (normalized in UNSURE | GREETINGS or model_result.get("unsure") is True
+            elif state == "discovery" and (normalized in UNSURE | GREETINGS or model_unsure
                     or (data["expected"] in {"interests", "goal"} and normalized in AFFIRMATIVE | NEGATIVE)):
                 field = data["expected"]
                 choices = {"interests": GUIDED_CHOICES, "goal": GOAL_CHOICES}
