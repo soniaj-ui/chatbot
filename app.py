@@ -154,7 +154,7 @@ SCRIPTS = (("ta-IN", "஀", "௿"), ("te-IN", "ఀ", "౿"), ("hi-IN", "ऀ", "�
 LANGUAGE_NAMES = {
     "en-IN": {"english", "ஆங்கிலம்", "ఇంగ్లీష్", "अंग्रेजी", "अंग्रेज़ी", "इंग्लिश"},
     "ta-IN": {"tamil", "thamizh", "tamizh", "தமிழ்", "தமிழில்"},
-    "te-IN": {"telugu", "తెలుగు", "తెలుగులో"},
+    "te-IN": {"telugu", "telgu", "telegu", "telungu", "telong", "తెలుగు", "తెలుగులో"},
     "hi-IN": {"hindi", "हिंदी", "हिन्दी", "हिंदी में"},
 }
 LANGUAGE_FILLERS = {"in", "please", "speak", "talk", "switch", "to", "language", "can", "you", "we", "i",
@@ -252,11 +252,14 @@ def say(data, text):
     data["messages"].append({"role": "assistant", "text": text})
 
 
-def ask_discovery(data, model_result, field, fallback):
+def ask_discovery(data, model_result, field, fallback, language):
     drafted = model_result.get("next_question")
+    # Tamil, Telugu and Hindi questions must be in their own script, which the voice reads well.
     if (model_result.get("next_field") == field and isinstance(drafted, str)
             and len(drafted.strip()) <= 300 and drafted.strip().endswith("?")
-            and drafted.count("?") == 1 and not any(char.isdigit() for char in drafted)):
+            and drafted.count("?") == 1 and not any(char.isdigit() for char in drafted)
+            and (language == "en-IN" or script_language(drafted) == language)
+            and not any(low <= char <= high for code, low, high in SCRIPTS if code != language for char in drafted)):
         say(data, drafted.strip())
         data["messages"][-1]["source"] = "model"
     else:
@@ -356,7 +359,11 @@ def guidance_model(language, profile, expected, answer, previous_question, initi
         "experience, interests or goal. question is true for a course question. unsure is "
         "true when the student has no preference or asks for guidance instead of giving a "
         "profile detail. Understand code switching and Romanized Tamil, Telugu and Hindi. "
-        "Draft one short, natural follow-up in the selected language, ending in ?. Use the "
+        "Draft one short, natural follow-up in the selected language, written in that language's own "
+        "script (Tamil, Telugu or Devanagari; only technical terms such as PLC in English), ending in ?. Begin with a "
+        "brief acknowledgement that repeats the key detail the student just gave, for example "
+        "'Engineering, good.', then ask a specific question that names the topic, such as PLC "
+        "programming or automation; never refer to it vaguely as 'this'. Use the "
         "previous question and student reply so the follow-up is specific. Set next_field "
         "to the field the question asks about. Use the first missing field in qualification, "
         "experience, interests, goal order after applying reliable updates, or the current "
@@ -560,7 +567,7 @@ def turn(session_id: int, body: Turn):
                 field = data["expected"]
                 choices = {"interests": GUIDED_CHOICES, "goal": GOAL_CHOICES}
                 fallback = choices[field][language] if field in choices else prompt[field]
-                ask_discovery(data, model_result, field, fallback)
+                ask_discovery(data, model_result, field, fallback, language)
             elif asks_courses(normalized):
                 say(data, course_list(prompt))
                 say(data, current_question(prompt, state, data["expected"], lead.interest, data["profile"]))
@@ -597,7 +604,7 @@ def turn(session_id: int, body: Turn):
                 data["expected"] = next_field
                 if next_field:
                     ask_discovery(data, model_result, next_field,
-                                  current_question(prompt, state, next_field, lead.interest, profile))
+                                  current_question(prompt, state, next_field, lead.interest, profile), language)
                 else:
                     state = "followup"
                     course = approved_match(profile, lead.interest)

@@ -193,8 +193,8 @@
             <option value="te-IN">తెలుగు</option><option value="hi-IN">हिन्दी</option>
           </select>
         </label>
-        <label class="switch"><input id="handsfree" type="checkbox"> Hands-free call</label>
-        <label class="switch"><input id="play" type="checkbox"> Read replies aloud</label>
+        <label class="switch"><input id="handsfree" type="checkbox" checked> Hands-free call</label>
+        <label class="switch"><input id="play" type="checkbox" checked> Read replies aloud</label>
       </div>
       <div id="messages" aria-label="Conversation" aria-live="polite">
         <div class="placeholder"><div class="big">📞</div>Add an enquiry, then press <b>Call</b>. Turn on <b>Hands-free call</b> to talk by voice in English, Tamil, Telugu or Hindi.</div>
@@ -601,6 +601,16 @@
       }
     };
   });
+  // Remember the voice switches for this browser.
+  for (const id of ["handsfree", "play"]) {
+    try {
+      const saved = localStorage.getItem("voice-" + id);
+      if (saved !== null) el(id).checked = saved === "on";
+    } catch {}
+    el(id).addEventListener("change", () => {
+      try { localStorage.setItem("voice-" + id, el(id).checked ? "on" : "off"); } catch {}
+    });
+  }
   el("mic").hidden = !recognitionType;
   el("handsfree").disabled = !recognitionType;
   // Chrome loads voices asynchronously; requesting them early makes them ready for the first reply.
