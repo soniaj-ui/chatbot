@@ -534,11 +534,13 @@
       }
       if (heard) send("message", heard);
       else if (el("handsfree").checked && retries++ < 2) listen();
-      else if (el("handsfree").checked) el("status").textContent = "No reply heard. Press the microphone or type to continue.";
+      else if (el("handsfree").checked) el("status").textContent = "No reply heard. Press the microphone or type to continue."
+        + (current.language === "en-IN" ? " The microphone is listening in English: say \"Tamil\", \"Telugu\" or \"Hindi\" first, or choose the language before pressing Call." : "");
     };
     el("mic").classList.add("active");
     el("status").textContent = "";
-    setCall("listening", "Listening… speak now (" + LANGUAGES[current.language] + ")");
+    setCall("listening", "Listening… speak now (" + LANGUAGES[current.language] + ")"
+      + (current.language === "en-IN" && current.state === "consent" ? ". For Tamil, Telugu or Hindi, say the language name first" : ""));
     trace("listen", current.language);
     try { recognition.start(); }
     catch {

@@ -24,6 +24,8 @@ LANGUAGES = {"en-IN": "English", "ta-IN": "Tamil", "te-IN": "Telugu", "hi-IN": "
 PROFILE_FIELDS = ("qualification", "experience", "interests", "goal")
 # Total time a turn may wait for the model, including one retry.
 DEADLINE = 15
+# With a backup configured, a slow main model is abandoned after this long so the backup has time to answer.
+MAIN_WAIT = 9
 pool = ThreadPoolExecutor(max_workers=4)
 
 INSTRUCTIONS = """You are an AI voice telecaller for a technical training institute. You are on a live
@@ -84,9 +86,8 @@ In "profile" include only details the student has stated, in short English notes
 The spoken text must be in "reply"."""
 
 
-def configured():
-    llm = settings.GUIDANCE_LLM
-    return all((llm["url"], llm["model"], llm["key"]))
+def models():
+    return [llm for llm in settings.GUIDANCE_LLMS if all((llm["url"], llm["model"], llm["key"]))]
 
 
 def course_facts():
@@ -142,12 +143,13 @@ def build_messages(session, event, correction=None):
     return messages
 
 
-def call_model(messages):
-    llm = settings.GUIDANCE_LLM
+def call_model(messages, llm):
     payload = {"model": llm["model"], "response_format": {"type": "json_object"},
                "temperature": 0.4, "messages": messages}
     request = Request(llm["url"], json.dumps(payload).encode("utf-8"),
-                      {"Authorization": f"Bearer {llm['key']}", "Content-Type": "application/json"})
+                      # Groq's firewall rejects Python's default user agent.
+                      {"Authorization": f"Bearer {llm['key']}", "Content-Type": "application/json",
+                       "User-Agent": "ai-telecaller/1.0"})
     with urlopen(request, timeout=DEADLINE) as response:
         content = json.load(response)["choices"][0]["message"]["content"]
     # Models sometimes wrap the object in code fences or add a word before it.
@@ -189,31 +191,48 @@ def clean(result, session):
 
 
 def respond(session, event):
-    """Ask the model for the next turn. Returns cleaned output, or None if the model failed."""
-    if not configured():
+    """Ask the model for the next turn. Returns cleaned output, or None if every model failed.
+
+    If the main model fails, is rate-limited or is too slow, the backup model answers the same turn.
+    """
+    llms = models()
+    if not llms:
         logger.warning("No model configured. Add GEMINI_API_KEY to .env.")
         return None
     started = time.monotonic()
     correction = None
+    current = 0
     for attempt in range(2):
         remaining = DEADLINE - (time.monotonic() - started)
         if remaining < 2:
             break
+        llm = llms[current]
+        has_backup = current + 1 < len(llms)
+        wait = min(remaining, MAIN_WAIT) if has_backup else remaining
         try:
-            result = clean(pool.submit(call_model, build_messages(session, event, correction)).result(timeout=remaining),
+            result = clean(pool.submit(call_model, build_messages(session, event, correction), llm).result(timeout=wait),
                            session)
         except ModelTimeout:
-            logger.warning("Model took longer than %s s.", DEADLINE)
-            return None
+            logger.warning("%s took longer than %s s.", llm["name"], round(wait))
+            if not has_backup:
+                return None
+            current += 1
+            continue
         except HTTPError as exc:
-            logger.warning("Model request failed (HTTP %s), attempt %s.", exc.code, attempt + 1)
+            logger.warning("%s request failed (HTTP %s), attempt %s.", llm["name"], exc.code, attempt + 1)
+            if has_backup:
+                current += 1
             # A rate limit is not fixed by retrying at once; it only uses up more of the quota.
-            if exc.code == 429:
+            elif exc.code == 429:
                 return None
             continue
         except (OSError, ValueError, KeyError, IndexError, TypeError) as exc:
-            logger.warning("Model response unusable (%s), attempt %s.", type(exc).__name__, attempt + 1)
+            logger.warning("%s response unusable (%s), attempt %s.", llm["name"], type(exc).__name__, attempt + 1)
+            if has_backup:
+                current += 1
             continue
+        if current:
+            logger.warning("Backup model %s answered.", llm["name"])
         # A fee that is not in the catalogue is a hallucination: ask the model to correct itself once.
         if ungrounded_amounts(result["reply"]) and attempt == 0:
             correction = ("Your previous reply mentioned an amount that is not in the catalogue. Use only "

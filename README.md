@@ -40,12 +40,15 @@ Create a `.env` file next to `run.py`. A free Gemini key from [Google AI Studio]
 ```
 GEMINI_API_KEY=your-key
 GEMINI_MODEL=gemini-flash-lite-latest
+# Optional backup: a free Groq key from https://console.groq.com/keys
+GROQ_API_KEY=
+GROQ_MODEL=qwen/qwen3.8-27b
 # Optional: an OpenAI key takes priority when set (API billing is separate from ChatGPT Plus)
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4o-mini
 ```
 
-The free Gemini tier allows about 15 requests per minute, which is about one call at a time.
+The first configured provider (OpenAI, Gemini, then Groq) writes the replies. The next one is a backup: if the main model fails, hits its rate limit or takes longer than 9 seconds, the backup answers the same turn. The free Gemini tier allows about 15 requests per minute, which is about one call at a time.
 
 ## Try a call
 

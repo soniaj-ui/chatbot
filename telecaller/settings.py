@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from .env import configure_model, load_env
+from .env import configured_models, load_env
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -53,11 +53,6 @@ LOGGING = {
     "loggers": {"guidance": {"handlers": ["console"], "level": "INFO"}},
 }
 
-# OpenAI-compatible chat-completions endpoint that writes every reply, configured from .env.
+# Language models that write every reply, from the keys in .env: a main model and an optional backup.
 load_env(BASE_DIR / ".env")
-configure_model()
-GUIDANCE_LLM = {
-    "url": os.getenv("GUIDANCE_LLM_URL", ""),
-    "model": os.getenv("GUIDANCE_LLM_MODEL", ""),
-    "key": os.getenv("GUIDANCE_LLM_KEY", ""),
-}
+GUIDANCE_LLMS = configured_models()[:2]

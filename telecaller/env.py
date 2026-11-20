@@ -1,9 +1,13 @@
-"""Read the AI key from .env so both run.py and manage.py use the language model."""
+"""Read the AI keys from .env so both run.py and manage.py use the language model."""
 
 import os
 
-OPENAI_URL = "https://api.openai.com/v1/chat/completions"
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+# OpenAI-compatible chat-completions endpoints, in order of preference, with their default models.
+PROVIDERS = (
+    ("OPENAI", "https://api.openai.com/v1/chat/completions", "gpt-4o-mini"),
+    ("GEMINI", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", "gemini-flash-lite-latest"),
+    ("GROQ", "https://api.groq.com/openai/v1/chat/completions", "qwen/qwen3.8-27b"),
+)
 
 
 def load_env(path):
@@ -17,12 +21,8 @@ def load_env(path):
             os.environ.setdefault(key, value)
 
 
-def configure_model():
-    # The first provider with a key in .env writes the replies: OpenAI, then Gemini.
-    for name, url, model in (("OPENAI", OPENAI_URL, "gpt-4o-mini"), ("GEMINI", GEMINI_URL, "gemini-flash-lite-latest")):
-        key = os.getenv(f"{name}_API_KEY", "").strip()
-        if key and not os.getenv("GUIDANCE_LLM_URL"):
-            os.environ["GUIDANCE_LLM_URL"] = url
-            os.environ["GUIDANCE_LLM_MODEL"] = os.getenv(f"{name}_MODEL", model)
-            os.environ["GUIDANCE_LLM_KEY"] = key
-    return os.getenv("GUIDANCE_LLM_MODEL")
+def configured_models():
+    """Every provider with a key: the first writes the replies, the next is the backup."""
+    return [{"name": name.title(), "url": url, "model": os.getenv(f"{name}_MODEL", model),
+             "key": os.getenv(f"{name}_API_KEY", "").strip()}
+            for name, url, model in PROVIDERS if os.getenv(f"{name}_API_KEY", "").strip()]

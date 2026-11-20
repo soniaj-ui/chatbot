@@ -1,11 +1,13 @@
-import json
+import time
 from unittest import mock
+from urllib.error import HTTPError
 
 from django.test import TestCase, override_settings
 
 from .models import Suppression
 
-LLM = {"url": "https://example.test/v1/chat/completions", "model": "test-model", "key": "test-key"}
+LLM = {"name": "Main", "url": "https://example.test/v1/chat/completions", "model": "test-model", "key": "test-key"}
+BACKUP = {**LLM, "name": "Backup", "model": "backup-model"}
 
 
 def reply(text, **fields):
@@ -14,7 +16,7 @@ def reply(text, **fields):
             "callback_preference": None, "end_call": False, **fields}
 
 
-@override_settings(GUIDANCE_LLM=LLM)
+@override_settings(GUIDANCE_LLMS=[LLM])
 class CallFlowTests(TestCase):
     def setUp(self):
         response = self.client.post("/api/enquiries", {"name": "Kavya", "contact": "9000000042", "interest": "PLC",
@@ -32,6 +34,7 @@ class CallFlowTests(TestCase):
                                         {"action": action, "text": text, "revision": session["revision"]},
                                         content_type="application/json")
         self.last_prompt = model.call_args.args[0] if model.call_args else None
+        self.last_model = model.call_args.args[1] if model.call_args else None
         return response
 
     def test_full_call_is_ai_generated_and_saves_recommendation(self):
@@ -98,3 +101,25 @@ class CallFlowTests(TestCase):
         session = self.start(reply("Hello, may I continue?"))
         self.say(session, "yes", reply("Hi", consent="given"))
         self.assertEqual(self.say(session, "again", reply("Hi")).status_code, 409)
+
+    @override_settings(GUIDANCE_LLMS=[LLM, BACKUP])
+    def test_backup_model_answers_when_main_is_rate_limited(self):
+        session = self.start(reply("Hello, may I continue?"))
+        limited = HTTPError(LLM["url"], 429, "Too Many Requests", {}, None)
+        session = self.say(session, "yes", limited, reply("Thanks. What did you study?", consent="given")).json()
+        self.assertEqual((session["messages"][-1]["source"], session["state"]), ("model", "discovery"))
+        self.assertEqual(self.last_model, BACKUP)
+
+    @override_settings(GUIDANCE_LLMS=[LLM, BACKUP])
+    def test_backup_model_answers_when_main_is_slow(self):
+        def slow_main(messages, llm):
+            if llm is LLM:
+                time.sleep(0.5)
+            return reply("Thanks. What did you study?", consent="given")
+        session = self.start(reply("Hello, may I continue?"))
+        with mock.patch("guidance.ai.MAIN_WAIT", 0.1), mock.patch("guidance.ai.call_model", side_effect=slow_main) as model:
+            session = self.client.post(f"/api/sessions/{session['id']}/turns",
+                                       {"action": "message", "text": "yes", "revision": session["revision"]},
+                                       content_type="application/json").json()
+        self.assertEqual(session["messages"][-1]["text"], "Thanks. What did you study?")
+        self.assertEqual(model.call_args.args[1], BACKUP)

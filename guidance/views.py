@@ -41,7 +41,7 @@ FIXED = {
               "queued": "मैंने काउंसलर कॉल के लिए आपका अनुरोध सहेज लिया है।"},
 }
 START_EVENT = ("[The call has just connected. Greet the student, disclose that you are an AI assistant and "
-               "ask for permission to continue.{offer}]")
+               "ask for permission to continue, in under 30 words.{offer}]")
 CONSENT_EVENT = "[The student pressed Continue to give permission. Thank them and ask the first discovery question.]"
 
 
@@ -144,7 +144,7 @@ def start(request, enquiry_id):
     session = CallSession(enquiry=lead, language=language, state="consent", data={
         "mode": "simulation", "profile": {}, "messages": [], "course_id": None, "catalogue_version": None,
         "unresolved": [], "consented_at": None, "callback": None, "outcome": None, "interest_level": "unknown"})
-    offer = " Mention that they can also talk in Tamil, Telugu or Hindi." if choice == "auto" else ""
+    offer = " Add a few words saying they can say Tamil, Telugu or Hindi to switch." if choice == "auto" else ""
     session.state = ai_reply(session, START_EVENT.format(offer=offer))
     session.save()
     return JsonResponse(session.as_dict(), status=201)
@@ -202,7 +202,8 @@ def speech(request):
 
     async def synthesise():
         audio = bytearray()
-        async for chunk in edge_tts.Communicate(text, VOICES[language]).stream():
+        # Slightly faster than the default voice so a call does not drag.
+        async for chunk in edge_tts.Communicate(text, VOICES[language], rate="+10%").stream():
             if chunk["type"] == "audio":
                 audio.extend(chunk["data"])
         return bytes(audio)

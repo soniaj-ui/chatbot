@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 
-from telecaller.env import configure_model, load_env
+from telecaller.env import configured_models, load_env
 
 ROOT = Path(__file__).resolve().parent
 
@@ -16,8 +16,11 @@ def main():
     args = parser.parse_args()
 
     load_env(ROOT / ".env")
-    model = configure_model()
-    print(f"AI replies by {model}" if model else "No AI key found: add GEMINI_API_KEY to .env")
+    models = configured_models()[:2]
+    if not models:
+        print("No AI key found: add GEMINI_API_KEY to .env")
+    else:
+        print(f"AI replies by {models[0]['model']}" + (f", backup {models[1]['model']}" if len(models) > 1 else ""))
 
     sys.path.insert(0, str(ROOT))
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "telecaller.settings")
