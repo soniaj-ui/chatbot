@@ -24,7 +24,14 @@ python -m pip install -r requirements.txt
 python run.py --port 8000
 ```
 
-`run.py` reads keys from `.env`, applies the Django migrations and starts the server. Open **http://127.0.0.1:8000** in Google Chrome.
+`run.py` applies the Django migrations and starts the server. The standard Django commands work too:
+
+```powershell
+python manage.py migrate
+python manage.py runserver 8000
+```
+
+Either way, Django reads the AI key from `.env`. Open **http://127.0.0.1:8000** in Google Chrome.
 
 ### AI key
 

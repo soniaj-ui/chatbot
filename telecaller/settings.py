@@ -3,6 +3,8 @@
 import os
 from pathlib import Path
 
+from .env import configure_model, load_env
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "local-demo-only-change-me")
@@ -51,7 +53,9 @@ LOGGING = {
     "loggers": {"guidance": {"handlers": ["console"], "level": "INFO"}},
 }
 
-# OpenAI-compatible chat-completions endpoint that writes every reply (set by run.py from .env).
+# OpenAI-compatible chat-completions endpoint that writes every reply, configured from .env.
+load_env(BASE_DIR / ".env")
+configure_model()
 GUIDANCE_LLM = {
     "url": os.getenv("GUIDANCE_LLM_URL", ""),
     "model": os.getenv("GUIDANCE_LLM_MODEL", ""),
