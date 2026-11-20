@@ -184,7 +184,9 @@ COURSE_WORDS = {"course", "courses", "program", "programs", "programme", "traini
 WHICH_WORDS = {"what", "which", "list", "available", "enna", "yenna", "entha", "iruku", "irukku", "irukka", "kya",
                "kaun", "kaunse", "konsa", "kaunsa", "emi", "enti", "evi", "unnayi", "என்ன", "எந்த", "என்னென்ன",
                "இருக்கு", "உள்ளன", "ఏమి", "ఏ", "ఏవి", "ఉన్నాయి", "क्या", "कौन", "कौनसे", "कौन से"}
-QUESTION_WORDS = WHICH_WORDS | {"how", "when", "where", "why", "will", "can", "does", "is", "are", "eppo", "eppadi",
+# Words such as "iruku" ("there is", "I have") also appear in plain answers, so they do not mark a question.
+STATEMENT_WORDS = {"iruku", "irukku", "இருக்கு", "list", "available", "உள்ளன", "ఉన్నాయి"}
+QUESTION_WORDS = (WHICH_WORDS - STATEMENT_WORDS) | {"how", "when", "where", "why", "will", "can", "does", "is", "are", "eppo", "eppadi",
                                 "evlo", "kab", "kaise", "kitna", "kitni", "ela", "eppudu", "எப்போது", "எப்படி",
                                 "எவ்வளவு", "कब", "कैसे", "कितना", "कितनी", "ఎప్పుడు", "ఎలా", "ఎంత"}
 THANKS = {"thanks", "thank you", "thankyou", "nandri", "dhanyavaad", "dhanyavad", "dhanyavadalu", "நன்றி",
@@ -543,8 +545,10 @@ def turn(session_id: int, body: Turn):
             model_question = model_result.get("question") is True and bool(set(normalized.split()) & QUESTION_WORDS)
             asks_question = ("?" in message or model_question
                              or any(term in query for term in DIRECT_QUESTIONS + UNPUBLISHED))
-            # A plain yes or no answers the experience question even if the model calls it unsure.
-            model_unsure = model_result.get("unsure") is True and normalized not in AFFIRMATIVE | NEGATIVE
+            # A reply containing yes or no ("இல்லை இந்த அனுபவம் இல்லை") answers the question even if
+            # the model calls it unsure.
+            model_unsure = (model_result.get("unsure") is True and normalized not in AFFIRMATIVE | NEGATIVE
+                            and not set(normalized.split()) & (AFFIRMATIVE | NEGATIVE))
             if state == "discovery" and not model_unsure and model_result.get("unsure") is True:
                 model_result = {**model_result, "next_field": None}
             if callback_offered and normalized in AFFIRMATIVE:

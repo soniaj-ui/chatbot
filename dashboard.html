@@ -130,8 +130,12 @@
   th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600 }
   th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle }
   tbody tr:hover { background: var(--surface-2) }
-  #detail { margin: 14px 0 0; padding: 14px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border);
-            font: 13px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere }
+  #detail { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; margin: 0; padding: 16px 20px;
+            border-top: 1px solid var(--border); background: var(--surface-2); font-size: 14px }
+  #detail[hidden] { display: none }
+  #detail h3 { grid-column: 1 / -1; margin: 0 0 4px; font-size: 15px }
+  #detail dt { color: var(--muted); font-weight: 600 }
+  #detail dd { margin: 0; overflow-wrap: anywhere }
 
   @media (max-width: 900px) {
     main { padding: 16px }
@@ -195,6 +199,7 @@
       <div id="messages" aria-label="Conversation" aria-live="polite">
         <div class="placeholder"><div class="big">📞</div>Add an enquiry, then press <b>Call</b>. Turn on <b>Hands-free call</b> to talk by voice in English, Tamil, Telugu or Hindi.</div>
       </div>
+      <dl id="detail" hidden></dl>
       <div class="dock" id="dock">
         <div id="permission" class="consent" hidden>
           <span>The student is asked for permission to continue.</span>
@@ -225,7 +230,6 @@
         <thead><tr><th>Student</th><th>Language</th><th>Outcome</th><th>Interest</th><th>Course</th><th>Callback</th><th></th></tr></thead>
         <tbody id="reports"></tbody>
       </table></div>
-      <pre id="detail" hidden></pre>
     </section>
   </div>
 </main>
@@ -334,14 +338,12 @@
       const lead = leads.find(item => item.id === report.enquiry_id);
       const course = courses.find(item => item.id === report.course_id);
       const details = button(report.state === "closed" ? "View" : "Resume", () => {
+        stopSpeaking();
+        recognition?.abort();
         current = report;
         render(false);
-        el("detail").hidden = false;
-        el("detail").textContent = JSON.stringify({
-          profile: report.profile, catalogue_version: report.catalogue_version,
-          unresolved: report.unresolved, callback: report.callback,
-          next_action: report.callback && !lead?.suppressed ? "Counsellor to review the callback request and verify eligibility." : null
-        }, null, 2);
+        showSummary(report, lead, course);
+        el("call").scrollIntoView({behavior: "smooth", block: "start"});
       });
       const outcome = report.outcome || (report.state === "closed" ? "closed" : "in_progress");
       const callback = report.callback
@@ -351,6 +353,29 @@
         node("span", "badge " + (OUTCOMES[outcome] || "accent"), outcome.replaceAll("_", " ")),
         report.interest_level, course ? course.title : null, callback, details]);
     }
+  }
+
+  // A readable counsellor summary of a saved call, shown under its conversation.
+  function showSummary(report, lead, course) {
+    const profile = report.profile || {};
+    const callback = report.callback
+      ? (lead?.suppressed ? "Blocked by opt-out" : "Requested" + (report.callback.preference ? " · " + report.callback.preference : ""))
+      : "Not requested";
+    const rows = [
+      ["Student", (lead?.name ?? "Enquiry " + report.enquiry_id) + " · " + (LANGUAGES[report.language] || report.language)],
+      ["Outcome", (report.outcome || (report.state === "closed" ? "closed" : "in progress")).replaceAll("_", " ")],
+      ["Education", profile.qualification],
+      ["Experience", profile.experience],
+      ["Interests", profile.interests],
+      ["Goal", profile.goal],
+      ["Suggested course", course?.title],
+      ["Questions for counsellor", report.unresolved?.length ? report.unresolved.join(" · ") : null],
+      ["Callback", callback],
+      ["Next step", report.callback && !lead?.suppressed ? "Counsellor to review the callback request and verify eligibility." : null]
+    ];
+    el("detail").replaceChildren(node("h3", "", "Counsellor summary · Session " + report.id));
+    for (const [label, value] of rows) el("detail").append(node("dt", "", label), node("dd", "", value || "—"));
+    el("detail").hidden = false;
   }
 
   function render(speak) {
@@ -542,6 +567,7 @@
         el("answer").value = "";
         setCall("speaking", "Thinking…");
       }
+      el("detail").hidden = true;
       trace("send", action + " " + text);
       current = await api("/api/sessions/" + current.id + "/turns", {action, text, revision: current.revision});
       el("answer").value = "";
