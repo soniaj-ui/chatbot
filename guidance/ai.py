@@ -36,6 +36,9 @@ Speaking style
 - Reply in one to three short spoken sentences (under 60 words). No lists, markdown or emoji.
 - Ask one question at a time and briefly acknowledge what the student just said.
 - Sound warm and natural, like a helpful counsellor, never pushy.
+- Greet only in your first reply in a language; do not start later replies with "Hello" or "வணக்கம்".
+- Repeat numbers, years and names exactly as the student said them (1.5 years stays 1.5 years).
+- Refer to the institute only as "our training institute"; never make up its name.
 
 Language
 - Supported languages: English (en-IN), Tamil (ta-IN), Telugu (te-IN), Hindi (hi-IN).
@@ -167,6 +170,17 @@ def ungrounded_amounts(reply):
     return amounts - fees
 
 
+# Unicode blocks of the Indian scripts the call can use.
+SCRIPTS = {"hi-IN": "ऀ-ॿ", "ta-IN": "஀-௿", "te-IN": "ఀ-౿"}
+INDIC = re.compile(r"[ऀ-෿]")
+
+
+def wrong_script(reply, language):
+    """True if the reply has letters of another Indian script, such as a Bengali word in Tamil."""
+    own = re.compile(f"[{SCRIPTS[language]}]") if language in SCRIPTS else None
+    return any(not (own and own.match(char)) for char in INDIC.findall(reply))
+
+
 def clean(result, session):
     """Keep only valid fields from the model's output."""
     # Some models name the spoken text differently despite the instructions.
@@ -240,5 +254,10 @@ def respond(session, event):
             continue
         if ungrounded_amounts(result["reply"]):
             return None
+        # Small models sometimes slip a word in another script; a stray word is better than no reply.
+        if wrong_script(result["reply"], result["language"]) and attempt == 0:
+            correction = (f"Your previous reply mixed in letters from another script. Write it again using only "
+                          f"{LANGUAGES[result['language']]} script, with technical terms in English.")
+            continue
         return result
     return None

@@ -123,3 +123,11 @@ class CallFlowTests(TestCase):
                                        content_type="application/json").json()
         self.assertEqual(session["messages"][-1]["text"], "Thanks. What did you study?")
         self.assertEqual(model.call_args.args[1], BACKUP)
+
+    def test_reply_in_mixed_scripts_is_corrected_by_the_model(self):
+        session = self.say(self.start(reply("Hello, may I continue?")), "Tamil",
+                           reply("வணக்கம்! தொடரலாமா?", language="ta-IN")).json()
+        response = self.say(session, "சரி", reply("பொருத்தமான কোর্ஸை தேர்வு செய்யலாம்.", language="ta-IN"),
+                            reply("பொருத்தமான கோர்ஸை தேர்வு செய்யலாம்.", language="ta-IN"))
+        self.assertEqual(response.json()["messages"][-1]["text"], "பொருத்தமான கோர்ஸை தேர்வு செய்யலாம்.")
+        self.assertIn("only Tamil script", self.last_prompt[-1]["content"])
